@@ -134,7 +134,7 @@ var funcMap = template.FuncMap{
         "resizeImage": resizeImage,
 }
 
-// Resize imge of thumbnail to large size
+// Resize image of thumbnail to larger size (scale to 1600)
 func resizeImage(url string) string {
     return strings.Replace(url, "s72-c", "s1600", -1)
 }
