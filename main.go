@@ -113,7 +113,7 @@ blogimport = true {{ with .Extra }}
 	image = "{{ .Author.Image.Src }}"
 
 [image]
-	src = ""
+	src = "{{ resizeImage .Media.ThumbnailUrl }}"
 	link = ""
 	thumblink = "{{ .Media.ThumbnailUrl }}"
 	alt = ""
@@ -127,7 +127,17 @@ blogimport = true {{ with .Extra }}
 {{ .Content }}
 `
 
-var t = template.Must(template.New("").Parse(templ))
+var t = template.Must(template.New("").Funcs(funcMap).Parse(templ))
+
+// maps the the function into template
+var funcMap = template.FuncMap{
+        "resizeImage": resizeImage,
+}
+
+// Resize imge of thumbnail to large size
+func resizeImage(url string) string {
+    return strings.Replace(url, "s72-c", "s1600", -1)
+}
 
 func main() {
 	log.SetFlags(0)
