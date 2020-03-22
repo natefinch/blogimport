@@ -1,4 +1,4 @@
-package main // import "lazyhackergo.com/blogimport"
+package main // import "lazyhacker.dev/blogimport"
 
 import (
 	"encoding/xml"
