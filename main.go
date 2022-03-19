@@ -33,7 +33,7 @@ func (d *Date) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
     return nil
 }
 
-type Draft bool 
+type Draft bool
 
 func (d *Draft) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
 	var v string
@@ -49,14 +49,24 @@ func (d *Draft) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
     return fmt.Errorf("Unknown value for draft boolean: %s", v)
 }
 
+type AuthorImage struct{
+	Src string `xml:"src,attr"`
+}
+
 type Author struct {
 	Name string `xml:"name"`
 	Uri string `xml:"uri"`
+	Image AuthorImage `xml:"image"`
 }
 
 type Export struct {
 	XMLName xml.Name `xml:"feed"`
 	Entries []Entry `xml:"entry"`
+}
+
+
+type Media struct {
+    ThumbnailUrl string `xml:"url,attr"`
 }
 
 type Entry struct {
@@ -68,8 +78,10 @@ type Entry struct {
 	Content string `xml:"content"`
 	Tags Tags `xml:"category"`
 	Author Author `xml:"author"`
+	Media Media `xml:"thumbnail"`
 	Extra string
 }
+
 type Tag struct {
 	Name string `xml:"term,attr"`
 	Scheme string `xml:"scheme,attr"`
@@ -98,12 +110,34 @@ blogimport = true {{ with .Extra }}
 [author]
 	name = "{{ .Author.Name }}"
 	uri = "{{ .Author.Uri }}"
+	image = "{{ .Author.Image.Src }}"
+
+[image]
+	src = "{{ resizeImage .Media.ThumbnailUrl }}"
+	link = ""
+	thumblink = "{{ .Media.ThumbnailUrl }}"
+	alt = ""
+	title = ""
+	author = ""
+	license = ""
+	licenseLink = ""
+
 +++
 
 {{ .Content }}
 `
 
-var t = template.Must(template.New("").Parse(templ))
+var t = template.Must(template.New("").Funcs(funcMap).Parse(templ))
+
+// maps the the function into template
+var funcMap = template.FuncMap{
+        "resizeImage": resizeImage,
+}
+
+// Resize image of thumbnail to larger size (scale to 1600)
+func resizeImage(url string) string {
+    return strings.Replace(url, "s72-c", "s1600", -1)
+}
 
 func main() {
 	log.SetFlags(0)
@@ -174,7 +208,7 @@ func main() {
 		if entry.Draft {
 			drafts++
 		} else {
-			count++		
+			count++
 		}
 	}
 	log.Printf("Wrote %d published posts to disk.", count)
@@ -213,10 +247,3 @@ func unicodeSanitize(s string) string {
 
 	return string(target)
 }
-
-
-
-
-
-
-
