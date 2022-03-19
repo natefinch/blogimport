@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2014, Nate Finch
+ * See LICENSE for more information.
+ */
+
 package main
 
 import (
