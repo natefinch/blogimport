@@ -4,17 +4,17 @@ import (
 	"encoding/xml"
 	"flag"
 	"fmt"
-	"log"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
 	"time"
 	"unicode"
+
+	"github.com/lunny/html2md"
 )
-
-
 
 type Date time.Time
 
@@ -24,66 +24,65 @@ func (d Date) String() string {
 
 func (d *Date) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
 	var v string
-    dec.DecodeElement(&v, &start)
-    t, err := time.Parse("2006-01-02T15:04:05.000-07:00", v)
-    if err != nil {
-    	return err
-    }
-    *d = Date(t)
-    return nil
+	dec.DecodeElement(&v, &start)
+	t, err := time.Parse("2006-01-02T15:04:05.000-07:00", v)
+	if err != nil {
+		return err
+	}
+	*d = Date(t)
+	return nil
 }
 
 type Draft bool
 
 func (d *Draft) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
 	var v string
-    dec.DecodeElement(&v, &start)
-    switch v {
-    case "yes":
-    	*d = true
-    	return nil
-    case "no":
-    	*d = false
-    	return nil
-    }
-    return fmt.Errorf("Unknown value for draft boolean: %s", v)
+	dec.DecodeElement(&v, &start)
+	switch v {
+	case "yes":
+		*d = true
+		return nil
+	case "no":
+		*d = false
+		return nil
+	}
+	return fmt.Errorf("Unknown value for draft boolean: %s", v)
 }
 
-type AuthorImage struct{
+type AuthorImage struct {
 	Src string `xml:"src,attr"`
 }
 
 type Author struct {
-	Name string `xml:"name"`
-	Uri string `xml:"uri"`
+	Name  string      `xml:"name"`
+	Uri   string      `xml:"uri"`
 	Image AuthorImage `xml:"image"`
 }
 
 type Export struct {
 	XMLName xml.Name `xml:"feed"`
-	Entries []Entry `xml:"entry"`
+	Entries []Entry  `xml:"entry"`
 }
 
-
 type Media struct {
-    ThumbnailUrl string `xml:"url,attr"`
+	ThumbnailUrl string `xml:"url,attr"`
 }
 
 type Entry struct {
-	ID string `xml:"id"`
-	Published Date `xml:"published"`
-	Updated Date `xml:"updated"`
-	Draft Draft `xml:"control>draft"`
-	Title string `xml:"title"`
-	Content string `xml:"content"`
-	Tags Tags `xml:"category"`
-	Author Author `xml:"author"`
-	Media Media `xml:"thumbnail"`
-	Extra string
+	ID        string `xml:"id"`
+	Published Date   `xml:"published"`
+	Updated   Date   `xml:"updated"`
+	Draft     Draft  `xml:"control>draft"`
+	Title     string `xml:"title"`
+	Content   string `xml:"content"`
+	Tags      Tags   `xml:"category"`
+	Author    Author `xml:"author"`
+	Media     Media  `xml:"thumbnail"`
+	Extra     string
 }
 
 type Tag struct {
-	Name string `xml:"term,attr"`
+	Name   string `xml:"term,attr"`
 	Scheme string `xml:"scheme,attr"`
 }
 
@@ -131,12 +130,12 @@ var t = template.Must(template.New("").Funcs(funcMap).Parse(templ))
 
 // maps the the function into template
 var funcMap = template.FuncMap{
-        "resizeImage": resizeImage,
+	"resizeImage": resizeImage,
 }
 
 // Resize image of thumbnail to larger size (scale to 1600)
 func resizeImage(url string) string {
-    return strings.Replace(url, "s72-c", "s1600", -1)
+	return strings.Replace(url, "s72-c", "s1600", -1)
 }
 
 func main() {
@@ -164,10 +163,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if !info.IsDir(){
+	if !info.IsDir() {
 		log.Fatal("Second argument is not a directory.")
- 	}
-
+	}
 
 	b, err := ioutil.ReadFile(args[0])
 	if err != nil {
@@ -202,6 +200,9 @@ func main() {
 		if extra != nil {
 			entry.Extra = *extra
 		}
+
+		entry.Content = html2md.Convert(entry.Content)
+		entry.Content = strings.Replace(entry.Content, "&nbsp;", " ", -1)
 		if err := writeEntry(entry, dir); err != nil {
 			log.Fatalf("Failed writing post %q to disk:\n%s", entry.Title, err)
 		}
@@ -219,7 +220,7 @@ var delim = []byte("+++\n")
 
 func writeEntry(e Entry, dir string) error {
 	filename := filepath.Join(dir, makePath(e.Title)+".md")
-	f, err := os.OpenFile(filename, os.O_CREATE | os.O_TRUNC | os.O_WRONLY, 0644)
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
@@ -227,7 +228,6 @@ func writeEntry(e Entry, dir string) error {
 
 	return t.Execute(f, e)
 }
-
 
 // Take a string with any characters and replace it so the string could be used in a path.
 // E.g. Social Media -> social-media
