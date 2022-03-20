@@ -126,30 +126,35 @@ func (t Tags) TomlString() string {
 }
 
 var templ = `+++
-title = "{{ .Title }}"{{ if not (eq .Title .Slug) }}
-slug = "{{ .Slug }}"{{end}}
+title = "{{ escape .Title }}"
+{{- if not (eq .Title .Slug) }}
+slug = "{{ escape .Slug }}"{{ end }}
 date = {{ .Published }}
-updated = {{ .Updated }}{{ with .Tags.TomlString }}
-tags = [{{ . }}]{{ end }}{{ if .Draft }}
-draft = true{{ end }}{{ if not (len .Comments | eq 0) }}
+updated = {{ .Updated }}
+{{- with .Tags.TomlString }}
+tags = [{{ . }}]{{ end }}
+{{- if .Draft }}
+draft = true{{ end }}
+blogimport = true
+{{- with .Extra }}
+{{ . }}{{ end }}
+{{- if not (len .Comments | eq 0) }}
 comments = [ {{range $i, $e := .Comments}}{{if $i}}, {{end}}{{$e}}{{end}} ]{{ end }}
-blogimport = true {{ with .Extra }}
-{{.}}{{ end }}
 [author]
 	name = "{{ .Author.Name }}"
 	uri = "{{ .Author.Uri }}"
-	image = "{{ .Author.Image.Src }}"
-
+	image = "{{ .Author.Image.Source }}"
+{{- with .Media.ThumbnailUrl }}
 [image]
-	src = "{{ resizeImage .Media.ThumbnailUrl }}"
+	src = "{{ resizeImage . }}"
 	link = ""
-	thumblink = "{{ .Media.ThumbnailUrl }}"
+	thumblink = "{{ . }}"
 	alt = ""
 	title = ""
 	author = ""
 	license = ""
 	licenseLink = ""
-
+{{- end }}
 +++
 
 {{ .Content }}
@@ -160,6 +165,7 @@ var t = template.Must(template.New("").Funcs(funcMap).Parse(templ))
 // maps the the function into template
 var funcMap = template.FuncMap{
 	"resizeImage": resizeImage,
+	"escape":      escape,
 }
 
 // Resize image of thumbnail to larger size (scale to 1600)
@@ -167,12 +173,18 @@ func resizeImage(url string) string {
 	return strings.Replace(url, "s72-c", "s1600", -1)
 }
 
+// Escape the string for use with toml format
+func escape(s string) string {
+	return strings.Replace(s, "\"", "\\\"", -1)
+}
+
 var comtemplate = `id = "{{ .ID }}"
 date = {{ .Published }}
 updated = {{ .Updated }}
 title = '''{{ .Title }}'''
-content = '''{{ .Content }}'''{{ with .Reply }}
-reply = {{.}}{{end}}
+content = '''{{ .Content }}'''
+{{- with .Reply }}
+reply = {{ . }}{{ end }}
 [author]
 	name = "{{ .Author.Name }}"
 	uri = "{{ .Author.Uri }}"
