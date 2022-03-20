@@ -216,22 +216,30 @@ func treeSort(i int) (list []int) {
 	return
 }
 
+var flags = struct {
+	Extra      string
+	NoBlogger  bool
+	NoComments bool
+}{}
+
 func main() {
 	log.SetFlags(0)
 
-	extra := flag.String("extra", "", "additional metadata to set in frontmatter")
+	// extra := flag.String("extra", "", "additional metadata to set in frontmatter")
+	flag.StringVar(&flags.Extra, "extra", "", "additional metadata to set in frontmatter")
+	flag.BoolVar(&flags.NoBlogger, "no-blogger", false, "remove blogger specific url")
+	flag.BoolVar(&flags.NoComments, "no-comments", false, "don't import comments")
+
 	flag.Parse()
 
-	args := flag.Args()
-
-	if len(args) != 2 {
+	if flag.NArg() != 2 {
 		log.Printf("Usage: %s [options] <xmlfile> <targetdir>", os.Args[0])
 		log.Println("options:")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
 
-	dir := args[1]
+	dir := flag.Arg(1)
 
 	info, err := os.Stat(dir)
 	if os.IsNotExist(err) {
@@ -245,7 +253,7 @@ func main() {
 		log.Fatal("Second argument is not a directory.")
 	}
 
-	b, err := ioutil.ReadFile(args[0])
+	b, err := ioutil.ReadFile(flag.Arg(0))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -300,25 +308,30 @@ func main() {
 	}
 
 	// Build comment heirarchy
-	for k, entry := range exp.Entries {
-		for _, tag := range entry.Tags {
-			if tag.Name == "http://schemas.google.com/blogger/2008/kind#comment" &&
-				tag.Scheme == "http://schemas.google.com/g/2005#kind" {
-				parent := entry.Reply
-				if parent == 0 {
-					parent, _ = strconv.ParseUint(path.Base(entry.Source.Source), 10, 64)
-				}
-				if parent == 0 {
-					fmt.Println("Skipping deleted comment " + entry.ID)
+	if !flags.NoComments {
+		for k, entry := range exp.Entries {
+			for _, tag := range entry.Tags {
+				if tag.Name == "http://schemas.google.com/blogger/2008/kind#comment" &&
+					tag.Scheme == "http://schemas.google.com/g/2005#kind" {
+					parent := entry.Reply
+					if parent == 0 {
+						parent, _ = strconv.ParseUint(path.Base(entry.Source.Source), 10, 64)
+					}
+					if parent == 0 {
+						fmt.Println("Skipping deleted comment " + entry.ID)
+						break
+					}
+					if i, ok := postmap[parent]; ok {
+						exp.Entries[i].Children = append(exp.Entries[i].Children, k)
+					} else {
+						panic(strconv.Itoa(k) + " entry did not exist")
+					}
+					err := writeComment(entry, dir)
+					if err != nil {
+						log.Println(err)
+					}
 					break
 				}
-				if i, ok := postmap[parent]; ok {
-					exp.Entries[i].Children = append(exp.Entries[i].Children, k)
-				} else {
-					panic(strconv.Itoa(k) + " entry did not exist")
-				}
-				writeComment(entry, dir)
-				break
 			}
 		}
 	}
@@ -344,8 +357,18 @@ func main() {
 				entry.Comments = append(entry.Comments, id)
 			}
 		}
-		if extra != nil {
-			entry.Extra = *extra
+		if flags.Extra != "" {
+			entry.Extra = flags.Extra
+		}
+
+		if flags.NoBlogger {
+			if strings.Contains(entry.Author.Uri, "blogger.com") {
+				entry.Author.Uri = ""
+			}
+
+			if strings.Contains(entry.Author.Image.Source, "blogger.com") {
+				entry.Author.Image.Source = ""
+			}
 		}
 
 		entry.Content = html2md.Convert(entry.Content)
