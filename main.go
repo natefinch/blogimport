@@ -221,6 +221,7 @@ var flags = struct {
 	NoBlogger bool
 	Comments  bool
 	ToMd      bool
+	SlugName  bool
 }{}
 
 func main() {
@@ -230,6 +231,7 @@ func main() {
 	flag.BoolVar(&flags.NoBlogger, "no-blogger", false, "remove blogger specific url")
 	flag.BoolVar(&flags.Comments, "comments", false, "don't import comments")
 	flag.BoolVar(&flags.ToMd, "md", false, "convert HTML to markdown")
+	flag.BoolVar(&flags.SlugName, "slug", false, "use slug as file name")
 
 	flag.Parse()
 
@@ -398,12 +400,11 @@ var delim = []byte("+++\n")
 
 func writeEntry(e Entry, dir string) error {
 	slug := makePath(e.Title)
-	if len(e.Slug) > 0 {
-		if slug != e.Slug {
-			fmt.Println("git mv " + slug + ".md " + e.Slug + ".md")
-		}
+
+	if len(e.Slug) > 0 && flags.SlugName {
 		slug = e.Slug
 	}
+
 	filename := filepath.Join(dir, slug+".md")
 	f, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
