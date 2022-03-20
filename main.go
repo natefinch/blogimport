@@ -21,7 +21,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/lunny/html2md"
+	md "github.com/JohannesKaufmann/html-to-markdown"
 )
 
 type Date time.Time
@@ -220,15 +220,16 @@ var flags = struct {
 	Extra      string
 	NoBlogger  bool
 	NoComments bool
+	ToMd       bool
 }{}
 
 func main() {
 	log.SetFlags(0)
 
-	// extra := flag.String("extra", "", "additional metadata to set in frontmatter")
 	flag.StringVar(&flags.Extra, "extra", "", "additional metadata to set in frontmatter")
 	flag.BoolVar(&flags.NoBlogger, "no-blogger", false, "remove blogger specific url")
 	flag.BoolVar(&flags.NoComments, "no-comments", false, "don't import comments")
+	flag.BoolVar(&flags.ToMd, "md", false, "convert HTML to markdown")
 
 	flag.Parse()
 
@@ -371,7 +372,14 @@ func main() {
 			}
 		}
 
-		entry.Content = html2md.Convert(entry.Content)
+		if flags.ToMd {
+			convert := md.NewConverter("", true, nil)
+			entry.Content, err = convert.ConvertString(entry.Content)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+
 		entry.Content = strings.Replace(entry.Content, "&nbsp;", " ", -1)
 		if err := writeEntry(entry, dir); err != nil {
 			log.Fatalf("Failed writing post %q to disk:\n%s", entry.Title, err)
