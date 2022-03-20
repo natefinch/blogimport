@@ -416,7 +416,14 @@ func writeEntry(e Entry, dir string) error {
 
 func writeComment(e Entry, dir string) error {
 	e.Title = strings.Replace(strings.Replace(e.Title, "\n", "", -1), "\r", "", -1)
-	filename := filepath.Join(path.Join(dir, "comments"), "c"+e.ID+".toml")
+
+	folder := filepath.Join(dir, "comments")
+	filename := filepath.Join(folder, "c"+e.ID+".toml")
+
+	if err := os.MkdirAll(folder, os.ModePerm); err != nil {
+		return err
+	}
+
 	f, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
