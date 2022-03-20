@@ -7,8 +7,8 @@ package main
 
 import (
 	"encoding/xml"
+	"errors"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -54,7 +54,7 @@ func (d *Draft) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
 		*d = false
 		return nil
 	}
-	return fmt.Errorf("Unknown value for draft boolean: %s", v)
+	return errors.New("Unknown value for draft boolean: " + v)
 }
 
 type AuthorImage struct {
@@ -119,7 +119,7 @@ func (t Tags) TomlString() string {
 	names := []string{}
 	for _, t := range t {
 		if t.Scheme == "http://www.blogger.com/atom/ns#" {
-			names = append(names, fmt.Sprintf("%q", t.Name))
+			names = append(names, t.Name)
 		}
 	}
 	return strings.Join(names, ", ")
@@ -296,7 +296,7 @@ func main() {
 			if id, err := strconv.ParseUint(exp.Entries[k].ID, 10, 64); err == nil {
 				postmap[id] = k
 			} else {
-				fmt.Println("Can't parse " + exp.Entries[k].ID)
+				log.Println("Can't parse " + exp.Entries[k].ID)
 			}
 		}
 		for _, link := range exp.Entries[k].Links {
@@ -321,7 +321,7 @@ func main() {
 						parent, _ = strconv.ParseUint(path.Base(entry.Source.Source), 10, 64)
 					}
 					if parent == 0 {
-						fmt.Println("Skipping deleted comment " + entry.ID)
+						log.Println("Skipping deleted comment " + entry.ID)
 						break
 					}
 					if i, ok := postmap[parent]; ok {
