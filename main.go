@@ -217,10 +217,10 @@ func treeSort(i int) (list []int) {
 }
 
 var flags = struct {
-	Extra      string
-	NoBlogger  bool
-	NoComments bool
-	ToMd       bool
+	Extra     string
+	NoBlogger bool
+	Comments  bool
+	ToMd      bool
 }{}
 
 func main() {
@@ -228,7 +228,7 @@ func main() {
 
 	flag.StringVar(&flags.Extra, "extra", "", "additional metadata to set in frontmatter")
 	flag.BoolVar(&flags.NoBlogger, "no-blogger", false, "remove blogger specific url")
-	flag.BoolVar(&flags.NoComments, "no-comments", false, "don't import comments")
+	flag.BoolVar(&flags.Comments, "comments", false, "don't import comments")
 	flag.BoolVar(&flags.ToMd, "md", false, "convert HTML to markdown")
 
 	flag.Parse()
@@ -309,7 +309,7 @@ func main() {
 	}
 
 	// Build comment heirarchy
-	if !flags.NoComments {
+	if flags.Comments {
 		for k, entry := range exp.Entries {
 			for _, tag := range entry.Tags {
 				if tag.Name == "http://schemas.google.com/blogger/2008/kind#comment" &&
