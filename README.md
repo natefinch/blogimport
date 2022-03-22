@@ -40,12 +40,12 @@ update to output other formats.
 
 ## Install
 With the official Go tool
-```
+```bash
 $ go install github.com/natefinch/blogimport@latest
 ```
 
 ## Usage
-```
+```bash
 Usage: blogimport [options] <xmlfile> <targetdir>
 options:
   -comments
@@ -56,8 +56,8 @@ options:
     	convert HTML to markdown
   -no-blogger
     	remove blogger specific url
-  -slug
-    	use slug as file name
+  -no-slug
+    	-no-slug=false for not use slug as file name (default true)
   -static string
     	static directory for import images
 ```

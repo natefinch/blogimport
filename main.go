@@ -237,7 +237,7 @@ func main() {
 	flag.BoolVar(&flags.NoBlogger, "no-blogger", false, "remove blogger specific url")
 	flag.BoolVar(&flags.Comments, "comments", false, "import comments")
 	flag.BoolVar(&flags.ToMd, "md", false, "convert HTML to markdown")
-	flag.BoolVar(&flags.SlugName, "slug", false, "use slug as file name")
+	flag.BoolVar(&flags.SlugName, "no-slug", true, "-no-slug=false for not use slug as file name")
 
 	flag.Parse()
 
