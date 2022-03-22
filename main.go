@@ -123,7 +123,7 @@ func (t Tags) TomlString() string {
 	names := []string{}
 	for _, t := range t {
 		if t.Scheme == "http://www.blogger.com/atom/ns#" {
-			names = append(names, t.Name)
+			names = append(names, strconv.QuoteToGraphic(t.Name))
 		}
 	}
 	return strings.Join(names, ", ")
