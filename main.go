@@ -9,11 +9,15 @@ import (
 	"encoding/xml"
 	"errors"
 	"flag"
+	"io"
 	"io/ioutil"
 	"log"
+	"math/rand"
+	"net/http"
+	"net/url"
 	"os"
-	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -217,6 +221,7 @@ func treeSort(i int) (list []int) {
 }
 
 var flags = struct {
+	Static    string
 	Extra     string
 	NoBlogger bool
 	Comments  bool
@@ -227,6 +232,7 @@ var flags = struct {
 func main() {
 	log.SetFlags(0)
 
+	flag.StringVar(&flags.Static, "static", "", "static directory for import images")
 	flag.StringVar(&flags.Extra, "extra", "", "additional metadata to set in frontmatter")
 	flag.BoolVar(&flags.NoBlogger, "no-blogger", false, "remove blogger specific url")
 	flag.BoolVar(&flags.Comments, "comments", false, "don't import comments")
@@ -234,6 +240,14 @@ func main() {
 	flag.BoolVar(&flags.SlugName, "slug", false, "use slug as file name")
 
 	flag.Parse()
+
+	if flags.Static != "" {
+		if abs, err := filepath.Abs(flags.Static); err == nil {
+			flags.Static = abs
+		} else {
+			log.Fatal(err)
+		}
+	}
 
 	if flag.NArg() != 2 {
 		log.Printf("Usage: %s [options] <xmlfile> <targetdir>", os.Args[0])
@@ -246,7 +260,7 @@ func main() {
 
 	info, err := os.Stat(dir)
 	if os.IsNotExist(err) {
-		err = os.MkdirAll(path.Join(dir, "comments"), 0755)
+		err = os.MkdirAll(filepath.Join(dir, "comments"), 0755)
 	}
 	if err != nil {
 		log.Fatal(err)
@@ -302,10 +316,10 @@ func main() {
 		for _, link := range exp.Entries[k].Links {
 			switch strings.ToLower(link.Rel) {
 			case "related":
-				exp.Entries[k].Reply, _ = strconv.ParseUint(path.Base(link.Link), 10, 64)
+				exp.Entries[k].Reply, _ = strconv.ParseUint(filepath.Base(link.Link), 10, 64)
 			case "alternate":
 			case "replies":
-				exp.Entries[k].Slug = strings.Replace(path.Base(link.Link), path.Ext(link.Link), "", -1)
+				exp.Entries[k].Slug = strings.Replace(filepath.Base(link.Link), filepath.Ext(link.Link), "", -1)
 			}
 		}
 	}
@@ -318,7 +332,7 @@ func main() {
 					tag.Scheme == "http://schemas.google.com/g/2005#kind" {
 					parent := entry.Reply
 					if parent == 0 {
-						parent, _ = strconv.ParseUint(path.Base(entry.Source.Source), 10, 64)
+						parent, _ = strconv.ParseUint(filepath.Base(entry.Source.Source), 10, 64)
 					}
 					if parent == 0 {
 						log.Println("Skipping deleted comment " + entry.ID)
@@ -350,9 +364,13 @@ func main() {
 				break
 			}
 		}
+
 		if !isPost {
 			continue
 		}
+
+		log.Println("Importing post: " + entry.Title)
+
 		// Sort and flatten all top level comment chains
 		entry.Children = treeSort(k)
 		for _, v := range entry.Children {
@@ -372,6 +390,10 @@ func main() {
 			if strings.Contains(entry.Author.Image.Source, "blogger.com") {
 				entry.Author.Image.Source = ""
 			}
+		}
+
+		if flags.Static != "" {
+			entry.Content = imgToLocal(entry.Content, flags.Static)
 		}
 
 		if flags.ToMd {
@@ -394,6 +416,90 @@ func main() {
 	}
 	log.Printf("Wrote %d published posts to disk.", count)
 	log.Printf("Wrote %d drafts to disk.", drafts)
+}
+
+// imgToLocal for each image, download it with downloadImage and replace the src with the local path
+func imgToLocal(content, dir string) string {
+	re := regexp.MustCompile(`<img[^>]*src="([^"]+)"[^>]*>`)
+	for _, match := range re.FindAllStringSubmatch(content, -1) {
+		if len(match) != 2 {
+			continue
+		}
+
+		src := match[1]
+
+		if !strings.HasPrefix(src, "http") {
+			continue
+		}
+
+		img, err := downloadImage(src, dir)
+		if err != nil {
+			log.Printf("Failed to download image %q: %s", src, err)
+			continue
+		}
+
+		content = strings.Replace(content, src, img, 1)
+	}
+
+	return content
+}
+
+// downloadImage downloads an image from the given URL and saves it to the given directory
+// Returns the img path part after the static directory (e.g. /img/foo.jpg) and an error
+func downloadImage(uri, dir string) (string, error) {
+	// Doanload the image
+	resp, err := http.Get(uri)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", errors.New("Error " + resp.Status)
+	}
+
+	// Create the image file if it doesn't exist
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		os.MkdirAll(dir, 0755)
+	}
+
+	// Build the file name
+	imgName := filepath.Base(uri)
+	if strings.Contains(imgName, "?") {
+		imgName = imgName[:strings.Index(imgName, "?")]
+	}
+	imgName, err = url.QueryUnescape(imgName)
+	if err != nil {
+		return "", err
+	}
+	if c := resp.Header.Get("Content-Type"); strings.Contains(c, "image/") {
+		ext := "." + strings.TrimPrefix(c, "image/")
+
+		if filepath.Ext(imgName) == "" {
+			imgName += ext
+		}
+	}
+
+	// Check if the file already exists
+	path := filepath.Join(dir, imgName)
+	if _, err := os.Stat(path); err == nil {
+		path = filepath.Join(dir, strconv.Itoa(rand.Int())+"-"+imgName)
+	}
+
+	// Save the image
+	img, err := os.Create(path)
+	if err != nil {
+		return "", err
+	}
+	defer img.Close()
+
+	_, err = io.Copy(img, resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	// Return everything after "/static" in path
+	return path[strings.Index(path, "/static")+7:], nil
 }
 
 var delim = []byte("+++\n")
@@ -434,7 +540,7 @@ func writeComment(e Entry, dir string) error {
 	return ct.Execute(f, e)
 }
 
-// Take a string with any characters and replace it so the string could be used in a path.
+// Take a string with any characters and replace it so the string could be used in a filepath.
 // E.g. Social Media -> social-media
 func makePath(s string) string {
 	return unicodeSanitize(strings.ToLower(strings.Replace(strings.TrimSpace(s), " ", "-", -1)))
