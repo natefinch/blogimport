@@ -235,7 +235,7 @@ func main() {
 	flag.StringVar(&flags.Static, "static", "", "static directory for import images")
 	flag.StringVar(&flags.Extra, "extra", "", "additional metadata to set in frontmatter")
 	flag.BoolVar(&flags.NoBlogger, "no-blogger", false, "remove blogger specific url")
-	flag.BoolVar(&flags.Comments, "comments", false, "don't import comments")
+	flag.BoolVar(&flags.Comments, "comments", false, "import comments")
 	flag.BoolVar(&flags.ToMd, "md", false, "convert HTML to markdown")
 	flag.BoolVar(&flags.SlugName, "slug", false, "use slug as file name")
 
