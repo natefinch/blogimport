@@ -87,18 +87,16 @@ func (t Tags) TomlString() string {
 	return strings.Join(names, ", ")
 }
 
-var templ = `+++
-title = "{{ .Title }}"
-date = {{ .Published }}
-updated = {{ .Updated }}{{ with .Tags.TomlString }}
-tags = [{{ . }}]{{ end }}{{ if .Draft }}
-draft = true{{ end }}
-blogimport = true {{ with .Extra }}
+var templ = `---
+title: "{{ .Title }}"
+date: {{ .Published }}
+updated: {{ .Updated }}{{ with .Tags.TomlString }}
+tags: [{{ . }}]{{ end }}{{ if .Draft }}
+draft: true{{ end }}
+blogimport: true {{ with .Extra }}
 {{.}}{{ end }}
-[author]
-	name = "{{ .Author.Name }}"
-	uri = "{{ .Author.Uri }}"
-+++
+author: "{{ .Author.Name }}"
+---
 
 {{ .Content }}
 `
