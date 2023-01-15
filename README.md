@@ -28,7 +28,7 @@ The program is run from the command line and requires two arguments:
 #### Step-by-step
 1. Open up your command line tool (Terminal on macOS)
 1. Navigate to the repository directory
-1. Run `go . <xmlfile> <targetdir>`
+1. Run `go run . <xmlfile> <targetdir>`
 
 Here's a typical frontmatter output:
 
