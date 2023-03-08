@@ -24,3 +24,5 @@ _testmain.go
 /main
 
 .DS_Store
+
+user-test/*
