@@ -7,7 +7,10 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -47,9 +50,22 @@ func (d *Draft) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
 	return fmt.Errorf("Unknown value for draft boolean: %s", v)
 }
 
+type Reply struct {
+	Rel    string `xml:"rel,attr"`
+	Link   string `xml:"href,attr"`
+	Source string `xml:"source,attr"`
+}
+
+type Image struct {
+	Width  int    `xml:"width,attr"`
+	Height int    `xml:"height,attr"`
+	Source string `xml:"src,attr"`
+}
+
 type Author struct {
-	Name string `xml:"name"`
-	Uri  string `xml:"uri"`
+	Name  string `xml:"name"`
+	Uri   string `xml:"uri"`
+	Image Image  `xml:"image"`
 }
 
 type Export struct {
@@ -58,22 +74,30 @@ type Export struct {
 }
 
 type Entry struct {
-	ID        string `xml:"id"`
-	Published Date   `xml:"published"`
-	Updated   Date   `xml:"updated"`
-	Draft     Draft  `xml:"control>draft"`
-	Title     string `xml:"title"`
-	Content   string `xml:"content"`
-	Tags      Tags   `xml:"category"`
-	Author    Author `xml:"author"`
+	ID        string  `xml:"id"`
+	Published Date    `xml:"published"`
+	Updated   Date    `xml:"updated"`
+	Draft     Draft   `xml:"control>draft"`
+	Title     string  `xml:"title"`
+	Content   string  `xml:"content"`
+	Tags      Tags    `xml:"category"`
+	Author    Author  `xml:"author"`
+	Source    Reply   `xml:"in-reply-to"`
+	Links     []Reply `xml:"link"`
+	Reply     uint64
+	Children  []int
+	Comments  []uint64
+	Slug      string
 	Extra     string
 }
+
 type Tag struct {
 	Name   string `xml:"term,attr"`
 	Scheme string `xml:"scheme,attr"`
 }
 
 type Tags []Tag
+type EntrySet []int
 
 func (t Tags) TomlString() string {
 	names := []string{}
@@ -85,17 +109,19 @@ func (t Tags) TomlString() string {
 	return strings.Join(names, ", ")
 }
 
-var tomlTempl = `+++
-title = "{{ .Title }}"
+var templ = `+++
+title = "{{ .Title }}"{{ if not (eq .Title .Slug) }}
+slug = "{{ .Slug }}"{{end}}
 date = {{ .Published }}
 updated = {{ .Updated }}{{ with .Tags.TomlString }}
 tags = [{{ . }}]{{ end }}{{ if .Draft }}
-draft = true{{ end }}
+draft = true{{ end }}{{ if not (len .Comments | eq 0) }}
+comments = [ {{range $i, $e := .Comments}}{{if $i}}, {{end}}{{$e}}{{end}} ]{{ end }}
 blogimport = true {{ with .Extra }}
 {{.}}{{ end }}
 [author]
-name = "{{ .Author.Name }}"
-uri = "{{ .Author.Uri }}"
+	name = "{{ .Author.Name }}"
+	uri = "{{ .Author.Uri }}"
 +++
 {{ .Content }}
 `
@@ -115,6 +141,43 @@ author: "{{ .Author.Name }}"
 `
 
 var t = template.Must(template.New("").Parse(yamlTempl))
+
+var comtemplate = `id = "{{ .ID }}"
+date = {{ .Published }}
+updated = {{ .Updated }}
+title = '''{{ .Title }}'''
+content = '''{{ .Content }}'''{{ with .Reply }}
+reply = {{.}}{{end}}
+[author]
+	name = "{{ .Author.Name }}"
+	uri = "{{ .Author.Uri }}"
+[author.image]
+	source = "{{ .Author.Image.Source }}"
+	width = "{{ .Author.Image.Width }}"
+	height = "{{ .Author.Image.Height }}"
+`
+
+var ct = template.Must(template.New("").Parse(comtemplate))
+var exp = Export{}
+
+func (s EntrySet) Len() int {
+	return len(s)
+}
+func (s EntrySet) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+func (s EntrySet) Less(i, j int) bool {
+	return time.Time(exp.Entries[s[i]].Published).Before(time.Time(exp.Entries[s[j]].Published))
+}
+
+func treeSort(i int) (list []int) {
+	sort.Sort(EntrySet(exp.Entries[i].Children))
+	for _, v := range exp.Entries[i].Children {
+		list = append(list, v)
+		list = append(list, treeSort(v)...)
+	}
+	return
+}
 
 func main() {
 	log.SetFlags(0)
@@ -136,13 +199,14 @@ func main() {
 	info, err := os.Stat(dir)
 
 	if os.IsNotExist(err) {
-		err = os.MkdirAll(dir, 0755)
+		err = os.MkdirAll(path.Join(dir, "comments"), 0755)
 	}
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if info != nil && !info.IsDir() {
+	info, err = os.Stat(dir)
+	if err != nil || !info.IsDir() {
 		log.Fatal("Second argument is not a directory.")
 	}
 
@@ -150,8 +214,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	exp := Export{}
 
 	err = xml.Unmarshal(b, &exp)
 	if err != nil {
@@ -162,9 +224,73 @@ func main() {
 		log.Fatal("No blog entries found!")
 	}
 
+	postmap := make(map[uint64]int)
+
+	// Go through and create a map of all entries so we can refer to them later by ID number
+	for k := range exp.Entries {
+		isTemplate := false
+		for _, tag := range exp.Entries[k].Tags {
+			if tag.Scheme == "http://schemas.google.com/g/2005#kind" {
+				switch tag.Name {
+				case "http://schemas.google.com/blogger/2008/kind#comment":
+					fallthrough
+				case "http://schemas.google.com/blogger/2008/kind#post":
+				default:
+					isTemplate = true
+				}
+				break
+			}
+		}
+		if isTemplate {
+			continue
+		}
+		if index := strings.LastIndex(exp.Entries[k].ID, "post-"); index >= 0 {
+			exp.Entries[k].ID = exp.Entries[k].ID[index+5:]
+
+			if id, err := strconv.ParseUint(exp.Entries[k].ID, 10, 64); err == nil {
+				postmap[id] = k
+			} else {
+				fmt.Println("Can't parse " + exp.Entries[k].ID)
+			}
+		}
+		for _, link := range exp.Entries[k].Links {
+			switch strings.ToLower(link.Rel) {
+			case "related":
+				exp.Entries[k].Reply, _ = strconv.ParseUint(path.Base(link.Link), 10, 64)
+			case "alternate":
+			case "replies":
+				exp.Entries[k].Slug = strings.Replace(path.Base(link.Link), path.Ext(link.Link), "", -1)
+			}
+		}
+	}
+
+	// Build comment heirarchy
+	for k, entry := range exp.Entries {
+		for _, tag := range entry.Tags {
+			if tag.Name == "http://schemas.google.com/blogger/2008/kind#comment" &&
+				tag.Scheme == "http://schemas.google.com/g/2005#kind" {
+				parent := entry.Reply
+				if parent == 0 {
+					parent, _ = strconv.ParseUint(path.Base(entry.Source.Source), 10, 64)
+				}
+				if parent == 0 {
+					fmt.Println("Skipping deleted comment " + entry.ID)
+					break
+				}
+				if i, ok := postmap[parent]; ok {
+					exp.Entries[i].Children = append(exp.Entries[i].Children, k)
+				} else {
+					panic(strconv.Itoa(k) + " entry did not exist")
+				}
+				writeComment(entry, dir)
+				break
+			}
+		}
+	}
+
 	count := 0
 	drafts := 0
-	for _, entry := range exp.Entries {
+	for k, entry := range exp.Entries {
 		isPost := false
 		for _, tag := range entry.Tags {
 			if tag.Name == "http://schemas.google.com/blogger/2008/kind#post" &&
@@ -175,6 +301,13 @@ func main() {
 		}
 		if !isPost {
 			continue
+		}
+		// Sort and flatten all top level comment chains
+		entry.Children = treeSort(k)
+		for _, v := range entry.Children {
+			if id, err := strconv.ParseUint(exp.Entries[v].ID, 10, 64); err == nil {
+				entry.Comments = append(entry.Comments, id)
+			}
 		}
 		if extra != nil {
 			entry.Extra = *extra
@@ -195,7 +328,8 @@ func main() {
 var delim = []byte("+++\n")
 
 func writeEntry(e Entry, dir string) error {
-	filename := filepath.Join(dir, makePath(e.Published, e.Title)+".md")
+	slug := makePath(e.Published, e.Title)
+	filename := filepath.Join(dir, slug+".md")
 	f, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -203,6 +337,18 @@ func writeEntry(e Entry, dir string) error {
 	defer f.Close()
 
 	return t.Execute(f, e)
+}
+
+func writeComment(e Entry, dir string) error {
+	e.Title = strings.Replace(strings.Replace(e.Title, "\n", "", -1), "\r", "", -1)
+	filename := filepath.Join(path.Join(dir, "comments"), "c"+e.ID+".toml")
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return ct.Execute(f, e)
 }
 
 // Take a string with any characters and replace it so the string could be used in a path.
