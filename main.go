@@ -178,8 +178,6 @@ func main() {
 	log.Printf("Wrote %d drafts to disk.", drafts)
 }
 
-var delim = []byte("+++\n")
-
 func writeEntry(e Entry, dir string) error {
 	// Blogger posts are written in stored as HTML.
 	// Don't save this with a .md extension or hugo
