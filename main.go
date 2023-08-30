@@ -110,6 +110,14 @@ var t = template.Must(template.New("").Funcs(template.FuncMap{
 	"QuoteStringValue": QuoteStringValue,
 }).Parse(templ))
 
+// Owner: read, write & execute. Other: Read & execute.
+// See: https://stackoverflow.com/questions/18415904/what-does-mode-t-0644-mean
+const DirectoryFilemode = 0755
+
+// Owner: read & write, other: read.
+// See: https://stackoverflow.com/questions/18415904/what-does-mode-t-0644-mean
+const FileFilemode = 0644
+
 func main() {
 	log.SetFlags(0)
 
@@ -129,7 +137,7 @@ func main() {
 
 	info, err := os.Stat(dir)
 	if os.IsNotExist(err) {
-		err = os.MkdirAll(dir, 0755)
+		err = os.MkdirAll(dir, DirectoryFilemode)
 	}
 	if err != nil {
 		log.Fatal(err)
@@ -191,7 +199,7 @@ func writeEntry(e Entry, dir string) error {
 	// will insert <p> tags at the start of each post.
 	extension := ".html"
 	filename := filepath.Join(dir, makePath(e.Title)+extension)
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, FileFilemode)
 	if err != nil {
 		return err
 	}
