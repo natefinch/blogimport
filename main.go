@@ -20,6 +20,11 @@ func (d Date) String() string {
 	return time.Time(d).Format("2006-01-02T15:04:05Z")
 }
 
+// Returns a string surrounded by quotes ("), its quotes escaped as \".
+func QuoteStringValue(str string) string {
+	return fmt.Sprintf("%q", str)
+}
+
 func (d *Date) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
 	var v string
 	dec.DecodeElement(&v, &start)
@@ -79,14 +84,14 @@ func (t Tags) TomlString() string {
 	names := []string{}
 	for _, t := range t {
 		if t.Scheme == "http://www.blogger.com/atom/ns#" {
-			names = append(names, fmt.Sprintf("%q", t.Name))
+			names = append(names, QuoteStringValue(t.Name))
 		}
 	}
 	return strings.Join(names, ", ")
 }
 
 var templ = `+++
-title = "{{ .Title }}"
+title = {{ QuoteStringValue .Title }}
 date = {{ .Published }}
 updated = {{ .Updated }}{{ with .Tags.TomlString }}
 tags = [{{ . }}]{{ end }}{{ if .Draft }}
@@ -94,14 +99,16 @@ draft = true{{ end }}
 blogimport = true {{ with .Extra }}
 {{.}}{{ end }}
 [author]
-	name = "{{ .Author.Name }}"
-	uri = "{{ .Author.Uri }}"
+	name = {{ QuoteStringValue .Author.Name }}
+	uri = {{ QuoteStringValue .Author.Uri }}
 +++
 
 {{ .Content }}
 `
 
-var t = template.Must(template.New("").Parse(templ))
+var t = template.Must(template.New("").Funcs(template.FuncMap{
+	"QuoteStringValue": QuoteStringValue,
+}).Parse(templ))
 
 func main() {
 	log.SetFlags(0)
