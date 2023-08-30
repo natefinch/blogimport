@@ -4,8 +4,8 @@ import (
 	"encoding/xml"
 	"flag"
 	"fmt"
-	"log"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,64 +14,67 @@ import (
 	"unicode"
 )
 
-
-
 type Date time.Time
 
 func (d Date) String() string {
 	return time.Time(d).Format("2006-01-02T15:04:05Z")
 }
 
-func (d *Date) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
-	var v string
-    dec.DecodeElement(&v, &start)
-    t, err := time.Parse("2006-01-02T15:04:05.000-07:00", v)
-    if err != nil {
-    	return err
-    }
-    *d = Date(t)
-    return nil
+// Returns a string surrounded by quotes ("), its quotes escaped as \".
+func QuoteStringValue(str string) string {
+	return fmt.Sprintf("%q", str)
 }
 
-type Draft bool 
+func (d *Date) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
+	var v string
+	dec.DecodeElement(&v, &start)
+	t, err := time.Parse("2006-01-02T15:04:05.000-07:00", v)
+	if err != nil {
+		return err
+	}
+	*d = Date(t)
+	return nil
+}
+
+type Draft bool
 
 func (d *Draft) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
 	var v string
-    dec.DecodeElement(&v, &start)
-    switch v {
-    case "yes":
-    	*d = true
-    	return nil
-    case "no":
-    	*d = false
-    	return nil
-    }
-    return fmt.Errorf("Unknown value for draft boolean: %s", v)
+	dec.DecodeElement(&v, &start)
+	switch v {
+	case "yes":
+		*d = true
+		return nil
+	case "no":
+		*d = false
+		return nil
+	}
+	return fmt.Errorf("Unknown value for draft boolean: %s", v)
 }
 
 type Author struct {
 	Name string `xml:"name"`
-	Uri string `xml:"uri"`
+	Uri  string `xml:"uri"`
 }
 
 type Export struct {
 	XMLName xml.Name `xml:"feed"`
-	Entries []Entry `xml:"entry"`
+	Entries []Entry  `xml:"entry"`
 }
 
 type Entry struct {
-	ID string `xml:"id"`
-	Published Date `xml:"published"`
-	Updated Date `xml:"updated"`
-	Draft Draft `xml:"control>draft"`
-	Title string `xml:"title"`
-	Content string `xml:"content"`
-	Tags Tags `xml:"category"`
-	Author Author `xml:"author"`
-	Extra string
+	ID        string `xml:"id"`
+	Published Date   `xml:"published"`
+	Updated   Date   `xml:"updated"`
+	Draft     Draft  `xml:"control>draft"`
+	Title     string `xml:"title"`
+	Content   string `xml:"content"`
+	Tags      Tags   `xml:"category"`
+	Author    Author `xml:"author"`
+	Extra     string
 }
 type Tag struct {
-	Name string `xml:"term,attr"`
+	Name   string `xml:"term,attr"`
 	Scheme string `xml:"scheme,attr"`
 }
 
@@ -81,14 +84,14 @@ func (t Tags) TomlString() string {
 	names := []string{}
 	for _, t := range t {
 		if t.Scheme == "http://www.blogger.com/atom/ns#" {
-			names = append(names, fmt.Sprintf("%q", t.Name))
+			names = append(names, QuoteStringValue(t.Name))
 		}
 	}
 	return strings.Join(names, ", ")
 }
 
 var templ = `+++
-title = "{{ .Title }}"
+title = {{ QuoteStringValue .Title }}
 date = {{ .Published }}
 updated = {{ .Updated }}{{ with .Tags.TomlString }}
 tags = [{{ . }}]{{ end }}{{ if .Draft }}
@@ -96,14 +99,24 @@ draft = true{{ end }}
 blogimport = true {{ with .Extra }}
 {{.}}{{ end }}
 [author]
-	name = "{{ .Author.Name }}"
-	uri = "{{ .Author.Uri }}"
+	name = {{ QuoteStringValue .Author.Name }}
+	uri = {{ QuoteStringValue .Author.Uri }}
 +++
 
 {{ .Content }}
 `
 
-var t = template.Must(template.New("").Parse(templ))
+var t = template.Must(template.New("").Funcs(template.FuncMap{
+	"QuoteStringValue": QuoteStringValue,
+}).Parse(templ))
+
+// Owner: read, write & execute. Other: Read & execute.
+// See: https://stackoverflow.com/questions/18415904/what-does-mode-t-0644-mean
+const DirectoryFilemode = 0755
+
+// Owner: read & write, other: read.
+// See: https://stackoverflow.com/questions/18415904/what-does-mode-t-0644-mean
+const FileFilemode = 0644
 
 func main() {
 	log.SetFlags(0)
@@ -123,17 +136,18 @@ func main() {
 	dir := args[1]
 
 	info, err := os.Stat(dir)
-	if os.IsNotExist(err) {
-		err = os.MkdirAll(dir, 0755)
-	}
-	if err != nil {
+	if err == nil {
+		if !info.IsDir() {
+			log.Fatal("Second argument is not a directory.")
+		}
+	} else if os.IsNotExist(err) {
+		err = os.MkdirAll(dir, DirectoryFilemode)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
 		log.Fatal(err)
 	}
-
-	if !info.IsDir(){
-		log.Fatal("Second argument is not a directory.")
- 	}
-
 
 	b, err := ioutil.ReadFile(args[0])
 	if err != nil {
@@ -174,18 +188,20 @@ func main() {
 		if entry.Draft {
 			drafts++
 		} else {
-			count++		
+			count++
 		}
 	}
 	log.Printf("Wrote %d published posts to disk.", count)
 	log.Printf("Wrote %d drafts to disk.", drafts)
 }
 
-var delim = []byte("+++\n")
-
 func writeEntry(e Entry, dir string) error {
-	filename := filepath.Join(dir, makePath(e.Title)+".md")
-	f, err := os.OpenFile(filename, os.O_CREATE | os.O_TRUNC | os.O_WRONLY, 0644)
+	// Blogger posts are written in stored as HTML.
+	// Don't save this with a .md extension or hugo
+	// will insert <p> tags at the start of each post.
+	extension := ".html"
+	filename := filepath.Join(dir, makePath(e.Title)+extension)
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, FileFilemode)
 	if err != nil {
 		return err
 	}
@@ -193,7 +209,6 @@ func writeEntry(e Entry, dir string) error {
 
 	return t.Execute(f, e)
 }
-
 
 // Take a string with any characters and replace it so the string could be used in a path.
 // E.g. Social Media -> social-media
@@ -213,10 +228,3 @@ func unicodeSanitize(s string) string {
 
 	return string(target)
 }
-
-
-
-
-
-
-
