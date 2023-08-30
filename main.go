@@ -136,15 +136,17 @@ func main() {
 	dir := args[1]
 
 	info, err := os.Stat(dir)
-	if os.IsNotExist(err) {
+	if err == nil {
+		if !info.IsDir() {
+			log.Fatal("Second argument is not a directory.")
+		}
+	} else if os.IsNotExist(err) {
 		err = os.MkdirAll(dir, DirectoryFilemode)
-	}
-	if err != nil {
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
 		log.Fatal(err)
-	}
-
-	if !info.IsDir() {
-		log.Fatal("Second argument is not a directory.")
 	}
 
 	b, err := ioutil.ReadFile(args[0])
