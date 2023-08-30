@@ -181,7 +181,11 @@ func main() {
 var delim = []byte("+++\n")
 
 func writeEntry(e Entry, dir string) error {
-	filename := filepath.Join(dir, makePath(e.Title)+".md")
+	// Blogger posts are written in stored as HTML.
+	// Don't save this with a .md extension or hugo
+	// will insert <p> tags at the start of each post.
+	extension := ".html"
+	filename := filepath.Join(dir, makePath(e.Title)+extension)
 	f, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
